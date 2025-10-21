@@ -8,7 +8,7 @@ import path from 'path';
 import { chroma, ef } from "./chroma.client.mjs";
 import { GoogleGenAI } from '@google/genai';
 import { getDocument } from 'pdfjs-dist/build/pdf.mjs';
-import { json } from 'stream/consumers';
+
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
@@ -73,25 +73,55 @@ const upload = multer({ storage, fileFilter });
 const saveChroma = async (record) => {
   // contoh fungsi untuk menyimpan data ke ChromaDB  
   const id = record.id.toString();
-  const documentContent = `CV File: ${record.cv_name} \n Project Report File: ${record.report_name}\nUploaded At: ${record.uploaded_at}`;
+  const documentContent = `
+        --- CV FILE: ${record.cv_name} ---
+        ${record.cvText} 
+
+        --- PROJECT REPORT FILE: ${record.report_name} ---
+        ${record.reportText} 
+
+        Uploaded At: ${record.uploaded_at}
+    `;
   const metadata = {
-    id:record.id,
     cv_name: record.cv_name,
     report_name: record.report_name,
     uploaded_at: record.uploaded_at,
   };
   const col = await chroma.getOrCreateCollection({ name: "candidates", embeddingFunction: ef });
-
+  const saveData = { 
+      ids: [id], 
+      documents: [documentContent], 
+      metadatas: [metadata] 
+    }
+    //   console.log(saveData);
+    //   process.exit(0);
     // 3. Tambahkan data
-    await col.add({ 
-        ids: [id], 
-        documents: [documentContent], 
-        metadatas: [metadata] 
-    });
+    await col.add(saveData);
     
     console.log(`Record ID ${id} saved to ChromaDB.`);
 };
+const getAllChromaData = async (collectionName) => {
+    // Asumsi: 'chroma' dan 'ef' (embeddingFunction) sudah diinisialisasi
+    try {
+        const col = await chroma.getOrCreateCollection({ 
+            name: collectionName, 
+            // Jika Anda sudah membuat koleksi, Anda hanya perlu: 
+            // const col = await chroma.getCollection({ name: collectionName });
+        });
 
+        // Panggil get() tanpa filter IDs.
+        // Include: meminta semua field yang Anda butuhkan (documents dan metadatas)
+        const allData = await col.get({
+            // Tidak menyertakan 'ids' atau 'where' berarti ambil semua
+            include: ["metadatas", "documents"] 
+        });
+
+        return allData;
+    } catch (error) {
+        console.error(`Gagal mendapatkan data dari koleksi ${collectionName}:`, error);
+        return { ids: [], metadatas: [], documents: [] };
+    }
+};
 app.post(
   "/upload",
   upload.fields([{ name: "cv", maxCount: 1 }, { name: "project_report", maxCount: 1 }]),
@@ -109,16 +139,27 @@ app.post(
         }
 
         // data dinyatakan lolos -> simpan ke "DB" (file json / database)
-        const all = loadData();
-        const id = all.length + 1; // auto increment sederhana
+        const allCandidates = await getAllChromaData('candidates');
+        console.log(`Total Kandidat: ${allCandidates.length}`)
+        // const all = loadData();
+        const id = allCandidates.length + 1; // auto increment sederhana
+
+        const cvPath = join(UPLOAD_DIR, cv.filename);
+        const reportPath = join(UPLOAD_DIR, pr.filename);
+        
+        const cvText = await readPdfText(cvPath);
+        const reportText = await readPdfText(reportPath);
+
         const record = {
             id,
             cv_name: cv.filename,
+            cvText:cvText,
             report_name: pr.filename,
+            reportText:reportText,
             uploaded_at: new Date().toISOString(),
         };
-        all.push(record);
-        saveData(all);
+        // all.push(record);
+        // saveData(all);
         saveChroma(record).catch((err) => {
             console.error("Gagal simpan ke ChromaDB:", err);
         });      
@@ -242,8 +283,6 @@ app.post('/evaluate', express.urlencoded({ extended: true }), async (req, res) =
         }
 
         // 2. Tentukan file yang akan dievaluasi (kita gabungkan CV dan Laporan)
-        const cvPath = join(UPLOAD_DIR, record.cv_name);
-        const reportPath = join(UPLOAD_DIR, record.report_name);
 
         if (!existsSync(cvPath) || !existsSync(reportPath)) {
              return res.status(404).json({ error: "Satu atau kedua file (CV/Laporan) tidak ditemukan di folder uploads." });
@@ -253,8 +292,7 @@ app.post('/evaluate', express.urlencoded({ extended: true }), async (req, res) =
         });
         res.json({ id,status: "processing" });
         // 3. Baca dan Gabungkan Teks dari Kedua File
-        const cvText = await readPdfText(cvPath);
-        const reportText = await readPdfText(reportPath);
+        
         
         const combinedText = `
             --- TEXT CV ---
