@@ -36,7 +36,7 @@ if (!existsSync(join(process.cwd(), "data"))) mkdirSync(join(process.cwd(), "dat
 if (!existsSync(DATA_FILE)) writeFileSync(DATA_FILE, JSON.stringify([], null, 2), "utf8");
 
 // baca/simpan data
-// const loadData = () => JSON.parse(readFileSync(DATA_FILE, "utf8"));
+
 function loadData() {
   try {
     const raw = readFileSync(DATA_FILE, "utf8");
