@@ -122,6 +122,25 @@ const getAllChromaData = async (collectionName) => {
         return { ids: [], metadatas: [], documents: [] };
     }
 };
+const getChromaData = async (collectionName,id) => {
+    // Asumsi: 'chroma' dan 'ef' (embeddingFunction) sudah diinisialisasi
+    try {
+        const col = await chroma.getOrCreateCollection({ 
+            name: collectionName, 
+        });
+        let get ={
+            ids : [id],
+            include: ["metadatas", "documents"] 
+        }
+        console.log(get);
+        const allData = await col.get(get);
+
+        return allData;
+    } catch (error) {
+        console.error(`Gagal mendapatkan data dari koleksi ${collectionName}:`, error);
+        return { ids: [], metadatas: [], documents: [] };
+    }
+};
 app.post(
   "/upload",
   upload.fields([{ name: "cv", maxCount: 1 }, { name: "project_report", maxCount: 1 }]),
@@ -140,16 +159,18 @@ app.post(
 
         // data dinyatakan lolos -> simpan ke "DB" (file json / database)
         const allCandidates = await getAllChromaData('candidates');
-        console.log(`Total Kandidat: ${allCandidates.length}`)
+        // console.log(allCandidates);
+        // console.log(`Total Kandidat: ${allCandidates.length}`)
         // const all = loadData();
-        const id = allCandidates.length + 1; // auto increment sederhana
+        const allIds = allCandidates.ids;
+        const currentId = allIds.length === 0?0:Math.max(allIds.map(idStr => parseInt(idStr,10)));
+        const id = currentId + 1; // auto increment sederhana
 
         const cvPath = join(UPLOAD_DIR, cv.filename);
         const reportPath = join(UPLOAD_DIR, pr.filename);
         
         const cvText = await readPdfText(cvPath);
         const reportText = await readPdfText(reportPath);
-
         const record = {
             id,
             cv_name: cv.filename,
@@ -177,9 +198,9 @@ app.post(
 
 // app.js (Tambahkan ini)
 
-app.get('/chroma-check/:id', async (req, res) => {
+app.get('/chroma-check/:id?', async (req, res) => {
     try {
-        const id = req.params.id;
+        const id = req.params.id == null ? 0 :req.params.id;
         const name = "candidates"; // Nama koleksi default
         const col = await chroma.getCollection({ name, embeddingFunction: ef });
         
@@ -275,8 +296,7 @@ app.post('/evaluate', express.urlencoded({ extended: true }), async (req, res) =
         }
 
         // 1. Cari Record berdasarkan ID dari data JSON
-        const allRecords = loadData();
-        const record = allRecords.find(r => String(r.id) === String(id));
+        const record = await getChromaData('candidates',id.toString());
 
         if (!record) {
             return res.status(404).json({ error: `Record dengan ID ${id} tidak ditemukan.` });
@@ -284,22 +304,14 @@ app.post('/evaluate', express.urlencoded({ extended: true }), async (req, res) =
 
         // 2. Tentukan file yang akan dievaluasi (kita gabungkan CV dan Laporan)
 
-        if (!existsSync(cvPath) || !existsSync(reportPath)) {
-             return res.status(404).json({ error: "Satu atau kedua file (CV/Laporan) tidak ditemukan di folder uploads." });
-        }
         saveChromaEvaluate(id.toString(),'processing').catch((err) => {
             console.error("Gagal simpan ke ChromaDB:", err);
         });
         res.json({ id,status: "processing" });
-        // 3. Baca dan Gabungkan Teks dari Kedua File
+        // 3. Baca Documents
         
         
-        const combinedText = `
-            --- TEXT CV ---
-            ${cvText}
-            --- TEXT LAPORAN PROYEK ---
-            ${reportText}
-        `;
+        const combinedText = `${record.documents[0]}`;
 
         // 4. Buat Prompt untuk Gemini
 const prompt = `
