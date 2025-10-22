@@ -1,3 +1,4 @@
 .env
 /uploads
 data/uploads.json
+/my_chroma_data
