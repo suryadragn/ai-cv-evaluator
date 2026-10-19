@@ -2,3 +2,6 @@
 /uploads
 data/uploads.json
 /my_chroma_data
+
+# local Chroma vector DB (contains CV text)
+my_chroma_data/
