@@ -364,11 +364,12 @@ const prompt = `
         const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
         
         if (!ai) { // Tambahkan pengecekan jika klien AI belum ada
-             return res.status(500).json({ error: "Klien Gemini API tidak diinisialisasi." });
+            //  return res.status(500).json({ error: "Klien Gemini API tidak diinisialisasi." });
+            console.error("Klien Gemini API tidak diinisialisasi.");
         }
 
         const response = await ai.models.generateContent({
-            model: "gemini-2.5-flash", 
+            model: "gemini-2.5-pro", 
             contents: prompt,
             config: {
                 responseMimeType: "application/json", // Minta respons JSON
@@ -391,7 +392,7 @@ const prompt = `
 
     } catch (err) {
         console.error("Gagal mengevaluasi data:", err);
-        res.status(500).json({ error: "Gagal memproses evaluasi.", detail: err.message });
+        // res.status(500).json({ error: "Gagal memproses evaluasi.", detail: err.message });
     }
 });
 
